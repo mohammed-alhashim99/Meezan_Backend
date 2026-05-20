@@ -3,6 +3,8 @@ from rest_framework.parsers import MultiPartParser, JSONParser
 from rest_framework.response import Response
 from rest_framework import status
 
+from .parsers.csv_parser import parse_csv
+
 
 @api_view(['GET'])
 def health_check(request):
@@ -18,21 +20,37 @@ def upload_file(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    uploaded_file = request.FILES['file']
-    file_name = uploaded_file.name
+    uploaded = request.FILES['file']
+    name = uploaded.name.lower()
 
-    if not (file_name.endswith('.csv') or file_name.endswith('.pdf')):
+    if name.endswith('.csv'):
+        try:
+            transactions = parse_csv(uploaded)
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        except Exception as e:
+            return Response(
+                {'error': f'Failed to parse CSV: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    elif name.endswith('.pdf'):
+        # PDF parsing — Day 3
+        return Response(
+            {'error': 'PDF parsing coming soon'},
+            status=status.HTTP_501_NOT_IMPLEMENTED
+        )
+
+    else:
         return Response(
             {'error': 'Only CSV and PDF files are supported'},
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    # Placeholder — parsing logic comes in Day 2-3
     return Response({
-        'message': 'File received successfully',
-        'file_name': file_name,
-        'file_size': uploaded_file.size,
-        'transactions': []
+        'file_name':        uploaded.name,
+        'transaction_count': len(transactions),
+        'transactions':     transactions,
     })
 
 
@@ -45,8 +63,7 @@ def categorize_transactions(request):
             {'error': 'No transactions provided'},
             status=status.HTTP_400_BAD_REQUEST
         )
-
-    # Placeholder — Claude categorization comes in Day 6
+    # Claude categorization — Day 6
     return Response({'transactions': transactions})
 
 
@@ -59,6 +76,5 @@ def get_insights(request):
             {'error': 'No transactions provided'},
             status=status.HTTP_400_BAD_REQUEST
         )
-
-    # Placeholder — Claude insights come in Day 8
+    # Claude insights — Day 8
     return Response({'insights': []})
