@@ -9,7 +9,7 @@ Strategy:
 import io
 import re
 import pdfplumber
-from .cleaner import clean_transactions
+from .cleaner import clean_transactions, normalize_numerals, normalize_amount
 
 
 # ── Column aliases (same as csv_parser, kept in one place) ──────────────────
@@ -46,12 +46,7 @@ def _match_col(headers: list[str], aliases: list[str]) -> int | None:
 
 
 def _to_float(val: str) -> float:
-    if not val or val.strip() in ('', '-', 'None'):
-        return 0.0
-    try:
-        return float(val.replace(',', '').strip())
-    except ValueError:
-        return 0.0
+    return normalize_amount(val)
 
 
 # ── Strategy 1: table extraction ─────────────────────────────────────────────
