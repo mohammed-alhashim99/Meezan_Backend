@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from rest_framework import status
 
 from .parsers.csv_parser import parse_csv
+from .parsers.pdf_parser import parse_pdf
 
 
 @api_view(['GET'])
@@ -35,11 +36,18 @@ def upload_file(request):
             )
 
     elif name.endswith('.pdf'):
-        # PDF parsing — Day 3
-        return Response(
-            {'error': 'PDF parsing coming soon'},
-            status=status.HTTP_501_NOT_IMPLEMENTED
-        )
+        try:
+            transactions = parse_pdf(uploaded)
+            # Strip internal debug fields before sending to client
+            for t in transactions:
+                t.pop('_strategy', None)
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        except Exception as e:
+            return Response(
+                {'error': f'Failed to parse PDF: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     else:
         return Response(
