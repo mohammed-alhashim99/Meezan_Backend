@@ -5,6 +5,7 @@ from rest_framework import status
 
 from .parsers.csv_parser import parse_csv
 from .parsers.pdf_parser import parse_pdf
+from .ai.categorizer import categorize
 
 
 @api_view(['GET'])
@@ -38,7 +39,6 @@ def upload_file(request):
     elif name.endswith('.pdf'):
         try:
             transactions = parse_pdf(uploaded)
-            # Strip internal debug fields before sending to client
             for t in transactions:
                 t.pop('_strategy', None)
         except ValueError as e:
@@ -56,9 +56,9 @@ def upload_file(request):
         )
 
     return Response({
-        'file_name':        uploaded.name,
+        'file_name':         uploaded.name,
         'transaction_count': len(transactions),
-        'transactions':     transactions,
+        'transactions':      transactions,
     })
 
 
@@ -71,8 +71,16 @@ def categorize_transactions(request):
             {'error': 'No transactions provided'},
             status=status.HTTP_400_BAD_REQUEST
         )
-    # Claude categorization — Day 6
-    return Response({'transactions': transactions})
+
+    try:
+        categorized = categorize(list(transactions))   # list() to avoid mutating request data
+    except Exception as e:
+        return Response(
+            {'error': f'Categorization failed: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+    return Response({'transactions': categorized})
 
 
 @api_view(['POST'])
