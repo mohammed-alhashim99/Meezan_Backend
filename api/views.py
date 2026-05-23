@@ -6,6 +6,7 @@ from rest_framework import status
 from .parsers.csv_parser import parse_csv
 from .parsers.pdf_parser import parse_pdf
 from .ai.categorizer import categorize
+from .ai.insights import generate_insights
 
 
 @api_view(['GET'])
@@ -92,5 +93,11 @@ def get_insights(request):
             {'error': 'No transactions provided'},
             status=status.HTTP_400_BAD_REQUEST
         )
-    # Claude insights — Day 8
-    return Response({'insights': []})
+    try:
+        insights = generate_insights(list(transactions))
+    except Exception as e:
+        return Response(
+            {'error': f'Insights generation failed: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    return Response({'insights': insights})
