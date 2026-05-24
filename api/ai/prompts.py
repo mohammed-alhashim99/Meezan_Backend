@@ -158,6 +158,33 @@ MERCHANT_DICT: dict[str, str] = {
     'salary':           'Transfers',
     'إيداع':            'Transfers',
     'deposit':          'Transfers',
+    'ref arnb':         'Transfers',   # Al-Rajhi bank reference
+    'ref ncbk':         'Transfers',   # NCB/SNB bank reference
+    'ref snb':          'Transfers',
+    # Shopping — digital payment methods
+    'apple pay':        'Shopping',
+    'google pay':       'Shopping',
+    'stc pay':          'Shopping',
+    'mada':             'Shopping',
+    # Food & Dining — extra
+    'مطاعم':            'Food & Dining',
+    'مطعم':             'Food & Dining',
+    'كافيه':            'Food & Dining',
+    'cafe':             'Food & Dining',
+    'مقهى':             'Food & Dining',
+    'حلويات':           'Food & Dining',
+    'bakery':           'Food & Dining',
+    # Transport — extra
+    'jeeny':            'Transport',
+    'جيني':             'Transport',
+    'سيارة':            'Transport',
+    'وقود':             'Transport',
+    'fuel':             'Transport',
+    'aramco':           'Transport',
+    # Bills — extra
+    'jawwy':            'Bills & Utilities',
+    'جوي':              'Bills & Utilities',
+    'النت':             'Bills & Utilities',
 }
 
 
