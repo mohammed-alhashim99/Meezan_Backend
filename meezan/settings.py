@@ -86,7 +86,7 @@ STORAGES = {
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', '')
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
 
 REST_FRAMEWORK = {
     'DEFAULT_PARSER_CLASSES': [

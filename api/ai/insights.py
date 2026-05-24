@@ -1,16 +1,16 @@
 """
-Savings insights generator using Claude Sonnet.
+Savings insights generator using Gemini Flash.
 Analyses categorised transactions and returns 3-5 personalised insights.
 """
 
 import json
 import logging
-import anthropic
+import google.generativeai as genai
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
-MODEL_SONNET = 'claude-sonnet-4-5'
+MODEL_NAME = 'gemini-1.5-flash'
 
 # ── Prompt ────────────────────────────────────────────────────────────────────
 
@@ -51,27 +51,28 @@ Generate 3-5 personalised savings insights for this user."""
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _get_client():
-    key = getattr(settings, 'ANTHROPIC_API_KEY', '') or ''
+def _get_model():
+    key = getattr(settings, 'GEMINI_API_KEY', '') or ''
     if not key:
-        logger.warning('ANTHROPIC_API_KEY not set — returning default insights')
+        logger.warning('GEMINI_API_KEY not set — returning fallback insights')
         return None
-    return anthropic.Anthropic(api_key=key)
+    genai.configure(api_key=key)
+    return genai.GenerativeModel(
+        model_name=MODEL_NAME,
+        system_instruction=SYSTEM_PROMPT,
+    )
 
 
 def _build_summary(transactions: list[dict]) -> dict:
-    """Compute the stats needed for the prompt."""
     income   = sum(t['amount'] for t in transactions if t['amount'] > 0)
     expenses = sum(abs(t['amount']) for t in transactions if t['amount'] < 0)
 
-    # Category breakdown
     cat_totals: dict[str, float] = {}
     for t in transactions:
         if t['amount'] < 0:
             cat = t.get('category') or 'Other'
             cat_totals[cat] = cat_totals.get(cat, 0) + abs(t['amount'])
 
-    # Top merchants by spend
     merchant_totals: dict[str, float] = {}
     for t in transactions:
         if t['amount'] < 0:
@@ -79,14 +80,14 @@ def _build_summary(transactions: list[dict]) -> dict:
             merchant_totals[m] = merchant_totals.get(m, 0) + abs(t['amount'])
 
     top_merchants = sorted(merchant_totals.items(), key=lambda x: x[1], reverse=True)[:8]
-
     dates = [t['date'] for t in transactions if t.get('date')]
+
     return {
-        'income':   income,
-        'expenses': expenses,
-        'net':      income - expenses,
-        'date_from': min(dates, default=''),
-        'date_to':   max(dates, default=''),
+        'income':        income,
+        'expenses':      expenses,
+        'net':           income - expenses,
+        'date_from':     min(dates, default=''),
+        'date_to':       max(dates, default=''),
         'cat_totals':    cat_totals,
         'top_merchants': top_merchants,
     }
@@ -113,7 +114,7 @@ def _build_prompt(summary: dict) -> str:
 
 
 def _fallback_insights(summary: dict) -> list[dict]:
-    """Return sensible rule-based insights when API is unavailable."""
+    """Rule-based insights when API is unavailable."""
     insights = []
     expenses = summary['expenses']
     income   = summary['income']
@@ -141,7 +142,6 @@ def _fallback_insights(summary: dict) -> list[dict]:
                 'type':     'warning',
             })
 
-    # Top spending category warning
     if summary['cat_totals']:
         top_cat, top_amt = max(summary['cat_totals'].items(), key=lambda x: x[1])
         if expenses > 0 and (top_amt / expenses) > 0.35:
@@ -175,10 +175,9 @@ def _parse_response(text: str) -> list[dict]:
         text = text.split('\n', 1)[-1].rsplit('```', 1)[0]
     try:
         data = json.loads(text)
-        # Validate required keys
         required = {'title_ar', 'title_en', 'body_ar', 'body_en', 'tip_ar', 'tip_en', 'type'}
         valid = [i for i in data if required.issubset(i.keys())]
-        return valid[:5]   # max 5
+        return valid[:5]
     except Exception as e:
         logger.error('Failed to parse insights response: %s', e)
         return []
@@ -187,35 +186,22 @@ def _parse_response(text: str) -> list[dict]:
 # ── Public entry point ────────────────────────────────────────────────────────
 
 def generate_insights(transactions: list[dict]) -> list[dict]:
-    """
-    Generate 3-5 savings insights from categorised transactions.
-    Returns a list of insight dicts with AR/EN fields.
-    """
+    """Generate 3-5 savings insights from categorised transactions."""
     summary = _build_summary(transactions)
-    client  = _get_client()
+    model   = _get_model()
 
-    if client is None:
+    if model is None:
         return _fallback_insights(summary)
 
     prompt = _build_prompt(summary)
 
     try:
-        msg = client.messages.create(
-            model=MODEL_SONNET,
-            max_tokens=2048,
-            system=SYSTEM_PROMPT,
-            messages=[{'role': 'user', 'content': prompt}],
-        )
-        insights = _parse_response(msg.content[0].text)
+        response = model.generate_content(prompt)
+        insights = _parse_response(response.text)
         if insights:
             return insights
-        # Empty response → fallback
-        logger.warning('Claude returned empty insights — using fallback')
+        logger.warning('Gemini returned empty insights — using fallback')
         return _fallback_insights(summary)
-
-    except anthropic.RateLimitError:
-        logger.warning('Rate limit hit for insights')
-        return _fallback_insights(summary)
-    except anthropic.APIError as e:
-        logger.error('Claude API error for insights: %s', e)
+    except Exception as e:
+        logger.error('Gemini API error for insights: %s', e)
         return _fallback_insights(summary)

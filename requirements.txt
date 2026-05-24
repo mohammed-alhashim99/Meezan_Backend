@@ -3,7 +3,7 @@ djangorestframework==3.17.1
 django-cors-headers==4.9.0
 pandas==3.0.3
 pdfplumber==0.11.9
-anthropic==0.103.1
+google-generativeai==0.8.5
 python-dotenv==1.2.2
 gunicorn==23.0.0
 whitenoise==6.9.0
