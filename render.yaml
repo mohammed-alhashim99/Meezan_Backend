@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: meezan-backend
+    runtime: python
+    pythonVersion: "3.12"
+    buildCommand: pip install -r requirements.txt && python manage.py collectstatic --no-input
+    startCommand: gunicorn meezan.wsgi:application --workers 2 --timeout 120
+    envVars:
+      - key: DEBUG
+        value: "False"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ALLOWED_HOSTS
+        # Replace with your Render URL after first deploy, e.g.:
+        # meezan-backend.onrender.com
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        # Add your Vercel frontend URL after deploy, e.g.:
+        # https://meezan.vercel.app
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
