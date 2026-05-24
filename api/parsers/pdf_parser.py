@@ -375,30 +375,30 @@ def parse_pdf(file) -> list[dict]:
             data = f.read()
 
     with pdfplumber.open(io.BytesIO(data)) as pdf:
-        # Strategy 1 — pdfplumber table extraction
-        raw = _parse_tables(pdf)
-        strategy = 'table'
+        result   = []
+        strategy = 'ocr'
 
-        # Strategy 2 — generic text regex (date-first lines)
-        if not raw:
-            raw = _parse_text(pdf)
-            strategy = 'text'
+        for name, fn in [
+            ('table',    _parse_tables),
+            ('text',     _parse_text),
+            ('anb_text', _parse_anb_text),
+        ]:
+            raw = fn(pdf)
+            if raw:
+                cleaned = clean_transactions(raw)
+                if cleaned:
+                    result   = cleaned
+                    strategy = name
+                    break
 
-        # Strategy 3 — ANB-style text (date-last lines)
-        if not raw:
-            raw = _parse_anb_text(pdf)
-            strategy = 'anb_text'
-
-        # Strategy 4 — OCR last resort
-        if not raw:
-            raw = _parse_ocr(pdf)
+        if not result:
+            raw    = _parse_ocr(pdf)
+            result = clean_transactions(raw)
             strategy = 'ocr'
 
-    if not raw:
+    if not result:
         raise ValueError('Could not extract any transactions from the PDF')
 
-    result = clean_transactions(raw)
-    # Attach parsing strategy for debugging (not in final response)
     for t in result:
         t['_strategy'] = strategy
     return result
