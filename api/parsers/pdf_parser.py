@@ -173,15 +173,16 @@ def _parse_tables(pdf: pdfplumber.PDF) -> list[dict] | None:
             if header_row is None:
                 continue   # not a transaction table
 
-            # Map columns on first encounter
-            if col_map is None:
-                date_i   = _match_col(header_row, DATE_ALIASES)
-                desc_i   = _match_col(header_row, DESC_ALIASES)
-                debit_i  = _match_col(header_row, DEBIT_ALIASES)
-                credit_i = _match_col(header_row, CREDIT_ALIASES)
-                col_map  = (date_i, desc_i, debit_i, credit_i)
-
-            date_i, desc_i, debit_i, credit_i = col_map
+            # Update column map for every table that has a valid header.
+            # Re-detecting per-table handles PDFs like Riyad Bank where page 1
+            # has a wide 14-column summary table and subsequent pages use a
+            # narrow 6-column layout — the wrong col_map from page 1 would
+            # otherwise misalign all later transactions.
+            date_i   = _match_col(header_row, DATE_ALIASES)
+            desc_i   = _match_col(header_row, DESC_ALIASES)
+            debit_i  = _match_col(header_row, DEBIT_ALIASES)
+            credit_i = _match_col(header_row, CREDIT_ALIASES)
+            col_map  = (date_i, desc_i, debit_i, credit_i)
 
             for row in table[data_start:]:
                 cells = [str(c or '').strip() for c in row]
