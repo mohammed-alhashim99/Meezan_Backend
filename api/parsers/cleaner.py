@@ -24,6 +24,8 @@ DATE_FORMATS = [
     '%Y-%m-%d',      # 2026-04-15  (Ahli EN)
     '%d-%b-%y',      # 15-Apr-26   (Inma)
     '%d-%b-%Y',      # 15-Apr-2026
+    '%d %b %y',      # 15 Apr 26   (Standard Chartered / Indian banks)
+    '%d %b %Y',      # 15 Apr 2026
     '%Y/%m/%d',      # 2026/04/15  (Riyad)
     '%m/%d/%Y',      # 04/15/2026  (US format fallback)
     '%d.%m.%Y',      # 15.04.2026
@@ -114,7 +116,7 @@ _MONTH_YEAR = re.compile(
 
 # Summary/total rows to skip
 _SUMMARY_ROW = re.compile(
-    r'^(مجموع|إجمالي|total|subtotal|balance\s+b/?f|رصيد)',
+    r'^(مجموع|إجمالي|total|subtotal|balance\s+b/?f|balance\s+forward|رصيد)',
     re.IGNORECASE,
 )
 

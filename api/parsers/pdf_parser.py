@@ -18,7 +18,8 @@ from .cleaner import clean_transactions, normalize_numerals, normalize_amount
 DATE_ALIASES   = ['date', 'transaction date', 'txn date', 'التاريخ', 'تاريخ',
                   'gregorian', 'miladi', 'ميلادي']   # Riyad Bank dual-date format
 DESC_ALIASES   = ['description', 'narration', 'narrative', 'transaction details',
-                  'details', 'البيان', 'وصف العملية', 'التفاصيل',
+                  'details', 'particulars', 'remarks',          # Standard Chartered India
+                  'البيان', 'وصف العملية', 'التفاصيل',
                   'transactiondetail', 'transaction detail']   # Riyad Bank
 DEBIT_ALIASES  = ['debit', 'debit (sar)', 'withdrawal', 'amount out',
                   'المدين', 'سحب', 'مبلغ السحب']
@@ -157,7 +158,20 @@ def _parse_tables(pdf: pdfplumber.PDF) -> list[dict] | None:
             if not table or len(table) < 2:
                 continue
 
-            header_row = [str(c or '').strip() for c in table[0]]
+            # Find the actual header row — some banks (e.g. Standard Chartered India)
+            # put account info in row 0 and column headers in row 1+
+            header_row = None
+            data_start = 1
+            for ri, hrow in enumerate(table[:5]):
+                candidate = [str(c or '').strip() for c in hrow]
+                if (_match_col(candidate, DATE_ALIASES) is not None and
+                        _match_col(candidate, DESC_ALIASES) is not None):
+                    header_row = candidate
+                    data_start = ri + 1
+                    break
+
+            if header_row is None:
+                continue   # not a transaction table
 
             # Map columns on first encounter
             if col_map is None:
@@ -165,15 +179,11 @@ def _parse_tables(pdf: pdfplumber.PDF) -> list[dict] | None:
                 desc_i   = _match_col(header_row, DESC_ALIASES)
                 debit_i  = _match_col(header_row, DEBIT_ALIASES)
                 credit_i = _match_col(header_row, CREDIT_ALIASES)
-
-                if date_i is None or desc_i is None:
-                    continue   # not a transaction table
-
-                col_map = (date_i, desc_i, debit_i, credit_i)
+                col_map  = (date_i, desc_i, debit_i, credit_i)
 
             date_i, desc_i, debit_i, credit_i = col_map
 
-            for row in table[1:]:
+            for row in table[data_start:]:
                 cells = [str(c or '').strip() for c in row]
                 if len(cells) <= max(date_i, desc_i):
                     continue
@@ -203,11 +213,15 @@ def _parse_tables(pdf: pdfplumber.PDF) -> list[dict] | None:
 # ── Strategy 2: raw text extraction ──────────────────────────────────────────
 
 # Matches lines like: "15/04/2026   Hyper Panda Riyadh   125.50      11874.50"
+#                  or: "24 Jun 19   BALANCE FORWARD   0.00   12345.00"
 _TEXT_ROW_RE = re.compile(
-    r'(\d{2}[/\-\.]\d{2}[/\-\.]\d{2,4}|\d{4}[/\-]\d{2}[/\-]\d{2})'  # date
-    r'\s+(.+?)\s+'                                                       # description
-    r'(\d[\d,]*\.\d{2})'                                                # amount
-    r'(?:\s+(\d[\d,]*\.\d{2}))?',                                       # optional balance
+    r'(\d{2}[/\-\.]\d{2}[/\-\.]\d{2,4}'             # DD/MM/YYYY  DD-MM-YYYY
+    r'|\d{4}[/\-]\d{2}[/\-]\d{2}'                    # YYYY-MM-DD  YYYY/MM/DD
+    r'|\d{2}\s+[A-Za-z]{3}\s+\d{2,4})'               # 24 Jun 19   15 Apr 2026
+    r'(?:\s+\d{2}\s+[A-Za-z]{3}\s+\d{2,4})?'         # optional value-date column
+    r'\s+(.+?)\s+'                                     # description
+    r'(\d[\d,]*\.\d{2})'                              # amount
+    r'(?:\s+(\d[\d,]*\.\d{2}))?',                     # optional running balance
 )
 
 
@@ -230,7 +244,62 @@ def _parse_text(pdf: pdfplumber.PDF) -> list[dict] | None:
     return raw if raw else None
 
 
-# ── Strategy 3: OCR fallback ──────────────────────────────────────────────────
+# ── Strategy 3: ANB Arab National Bank text format ───────────────────────────
+#
+# ANB stores each transaction as TWO lines:
+#   Line A:  [Arabic/English description]    YYYY-MM-DD
+#   Line B:  [running balance]   [debit amount]-   (or credit amount)
+#
+# Because the date is at the END of the description line, _TEXT_ROW_RE never
+# matches. This dedicated parser handles that layout.
+
+_ANB_ENTRY = re.compile(r'^(.{5,})\s{3,}(\d{4}-\d{2}-\d{2})\s*$')
+
+
+def _parse_anb_text(pdf: pdfplumber.PDF) -> list[dict] | None:
+    """
+    ANB Arab National Bank text-layout parser.
+    Detects transactions where description + date appear on one line
+    and the amount appears on the next line.
+    """
+    raw = []
+    for page in pdf.pages:
+        text = page.extract_text() or ''
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+
+        for idx, line in enumerate(lines):
+            m = _ANB_ENTRY.match(line)
+            if not m:
+                continue
+            desc_raw = _nfkc(m.group(1)).strip()
+            date_val = m.group(2)
+
+            # Scan the next 1–3 lines for an amount value
+            amount = 0.0
+            for look in range(idx + 1, min(idx + 4, len(lines))):
+                # Match numbers like 1,234.56 or 1234.56 with optional trailing -
+                nums = re.findall(r'([\d,]+\.\d{2})(-?)', lines[look])
+                if nums:
+                    val_str, sign = nums[0]   # first number = transaction amount
+                    amount = _to_float(val_str)
+                    # Trailing '-' means debit (expense); no sign also defaults expense
+                    amount = -amount if sign != '+' else amount
+                    break
+
+            desc = _clean_desc(desc_raw)
+            if desc:
+                raw.append({
+                    'date':          date_val,
+                    'merchant':      desc,
+                    'amount':        amount,
+                    'currency':      'SAR',
+                    'original_text': desc_raw,
+                })
+
+    return raw if raw else None
+
+
+# ── Strategy 4: OCR fallback ──────────────────────────────────────────────────
 
 def _parse_ocr(pdf: pdfplumber.PDF) -> list[dict]:
     """Render each page as image, run Tesseract, then re-apply text strategy."""
@@ -281,16 +350,21 @@ def parse_pdf(file) -> list[dict]:
             data = f.read()
 
     with pdfplumber.open(io.BytesIO(data)) as pdf:
-        # Strategy 1 — tables
+        # Strategy 1 — pdfplumber table extraction
         raw = _parse_tables(pdf)
         strategy = 'table'
 
-        # Strategy 2 — raw text
+        # Strategy 2 — generic text regex (date-first lines)
         if not raw:
             raw = _parse_text(pdf)
             strategy = 'text'
 
-        # Strategy 3 — OCR
+        # Strategy 3 — ANB-style text (date-last lines)
+        if not raw:
+            raw = _parse_anb_text(pdf)
+            strategy = 'anb_text'
+
+        # Strategy 4 — OCR last resort
         if not raw:
             raw = _parse_ocr(pdf)
             strategy = 'ocr'
