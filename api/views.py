@@ -11,7 +11,7 @@ from .ai.insights import generate_insights
 
 @api_view(['GET'])
 def health_check(request):
-    return Response({'status': 'ok', 'message': 'Meezan API is running'})
+    return Response({'status': 'ok', 'message': 'Meezan API is running', 'version': '1.0'})
 
 
 @api_view(['POST'])
