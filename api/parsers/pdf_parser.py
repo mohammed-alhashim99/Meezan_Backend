@@ -253,14 +253,23 @@ def _parse_text(pdf: pdfplumber.PDF) -> list[dict] | None:
 # Because the date is at the END of the description line, _TEXT_ROW_RE never
 # matches. This dedicated parser handles that layout.
 
-_ANB_ENTRY = re.compile(r'^(.{5,})\s{3,}(\d{4}-\d{2}-\d{2})\s*$')
+# Only ONE space separates Arabic text from the trailing date in ANB PDFs
+_ANB_ENTRY = re.compile(r'^(.{5,})\s+(\d{4}-\d{2}-\d{2})\s*$')
+
+# Amount line structure: [balance]  [-][amount]  [rest...]
+# Handles integers (10,258) and decimals (5,000.58)
+_ANB_AMT_LINE = re.compile(r'^([\d,]+(?:\.\d+)?)\s+(-?)([\d,]+(?:\.\d+)?)')
+
+# POS merchant name appears after the ", ," separator on the amount line
+_ANB_MERCHANT_RE = re.compile(r',\s+,\s*(.+?)(?:\s{2,}.+)?$')
 
 
 def _parse_anb_text(pdf: pdfplumber.PDF) -> list[dict] | None:
     """
     ANB Arab National Bank text-layout parser.
-    Detects transactions where description + date appear on one line
-    and the amount appears on the next line.
+    Each transaction:
+      Line A: [description (reversed Arabic)]  YYYY-MM-DD
+      Line B: [running-balance]  [-][amount]  [merchant or extra detail]
     """
     raw = []
     for page in pdf.pages:
@@ -274,19 +283,35 @@ def _parse_anb_text(pdf: pdfplumber.PDF) -> list[dict] | None:
             desc_raw = _nfkc(m.group(1)).strip()
             date_val = m.group(2)
 
-            # Scan the next 1–3 lines for an amount value
-            amount = 0.0
-            for look in range(idx + 1, min(idx + 4, len(lines))):
-                # Match numbers like 1,234.56 or 1234.56 with optional trailing -
-                nums = re.findall(r'([\d,]+\.\d{2})(-?)', lines[look])
-                if nums:
-                    val_str, sign = nums[0]   # first number = transaction amount
-                    amount = _to_float(val_str)
-                    # Trailing '-' means debit (expense); no sign also defaults expense
-                    amount = -amount if sign != '+' else amount
-                    break
+            amount   = 0.0
+            merchant = ''
 
-            desc = _clean_desc(desc_raw)
+            for look in range(idx + 1, min(idx + 4, len(lines))):
+                ma = _ANB_AMT_LINE.match(lines[look])
+                if not ma:
+                    continue
+                # group(1)=balance (ignore), group(2)=sign, group(3)=amount
+                sign   = ma.group(2)
+                amount = _to_float(ma.group(3))
+                if sign == '-':
+                    amount = -amount
+                # positive amount = credit (income/salary)
+
+                # POS purchases carry merchant name after ", ," on the amount line
+                mm = _ANB_MERCHANT_RE.search(lines[look])
+                if mm:
+                    merchant = mm.group(1).strip(' ,')
+                break
+
+            # Use POS merchant if found; otherwise fix the reversed-Arabic description
+            if merchant:
+                desc = merchant
+            else:
+                # ANB stores Arabic in visual RTL order — reverse to get readable text
+                desc = _fix_rtl_visual(desc_raw) if desc_raw else desc_raw
+
+            desc = (desc or '').strip(':,.- ')
+
             if desc:
                 raw.append({
                     'date':          date_val,
