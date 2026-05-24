@@ -10,7 +10,9 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-dev-key-change-in-producti
 
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+_allowed_env = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1')
+ALLOWED_HOSTS = [h.strip() for h in _allowed_env.split(',') if h.strip()]
+ALLOWED_HOSTS += ['.onrender.com', '.vercel.app']  # allow all Render & Vercel subdomains
 
 INSTALLED_APPS = [
     'django.contrib.admin',
