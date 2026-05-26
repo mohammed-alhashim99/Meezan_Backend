@@ -1,7 +1,8 @@
 """
-Generate 4 sample bank statement PDFs for testing the PDF parser.
+Generate 6 sample bank statement PDFs for testing the PDF parser.
 Each bank has a slightly different table structure/layout.
 Run once: python tests/create_test_pdfs.py
+Banks covered: Al-Rajhi, Ahli (SNB), Inma, Riyad, ANB, Fransi
 """
 
 import os, sys
@@ -127,4 +128,22 @@ _make_pdf(
     [list(r) for r in TRANSACTIONS],
 )
 
-print('\nAll 4 PDFs created successfully.')
+# ── ANB (Arab National Bank): Date | Description | Debit | Credit | Balance ──
+_make_pdf(
+    'sample_anb.pdf',
+    'Arab National Bank - Account Statement',
+    ['Date', 'Description', 'Debit', 'Credit', 'Balance'],
+    [3*cm, 7.5*cm, 3*cm, 3*cm, 3*cm],
+    [list(r) for r in TRANSACTIONS],
+)
+
+# ── Fransi: Date | Transaction Details | Debit | Credit | Balance ─────────────
+_make_pdf(
+    'sample_fransi.pdf',
+    'Banque Saudi Fransi - Account Statement',
+    ['Date', 'Transaction Details', 'Debit', 'Credit', 'Balance'],
+    [3*cm, 7.5*cm, 3*cm, 3*cm, 3*cm],
+    [list(r) for r in TRANSACTIONS],
+)
+
+print('\nAll 6 PDFs created successfully.')
