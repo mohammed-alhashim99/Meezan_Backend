@@ -313,7 +313,9 @@ def _parse_anb_text(pdf: pdfplumber.PDF) -> list[dict] | None:
 
             desc = (desc or '').strip(':,.- ')
 
-            if desc:
+            # Skip zero-amount rows — they are metadata/continuation lines
+            # that happen to end with a date (e.g. ATM reference lines in ANB PDFs)
+            if desc and amount != 0:
                 raw.append({
                     'date':          date_val,
                     'merchant':      desc,
